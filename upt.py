@@ -62,7 +62,7 @@ class UPT(nn.Module):
                  alpha: float = 0.5, gamma: float = 2.0,
                  box_score_thresh: float = 0.2, fg_iou_thresh: float = 0.5,
                  min_instances: int = 3, max_instances: int = 15,
-                 legacy_label2present_label: dict = None,
+                 nms: float = 0.5,
                  ) -> None:
         super().__init__()
         self.detector = detector
@@ -77,14 +77,10 @@ class UPT(nn.Module):
 
         self.box_score_thresh = box_score_thresh
         self.fg_iou_thresh = fg_iou_thresh
+        self.nms = nms
 
         self.min_instances = min_instances
         self.max_instances = max_instances
-
-        if legacy_label2present_label is not None:
-            self.legacy_label2present_label = dict(legacy_label2present_label)
-        else:
-            self.legacy_label2present_label = None
 
     def recover_boxes(self, boxes, size):
         boxes = box_ops.box_cxcywh_to_xyxy(boxes)
@@ -140,7 +136,7 @@ class UPT(nn.Module):
         for res, hs in zip(results, hidden_states):
             sc, lb, bx = res.values()
 
-            keep = batched_nms(bx, sc, lb, 1.0)
+            keep = batched_nms(bx, sc, lb, self.nms)
             sc = sc[keep].view(-1)
             lb = lb[keep].view(-1)
             bx = bx[keep].view(-1, 4)
@@ -203,15 +199,6 @@ class UPT(nn.Module):
 
         return detections
 
-    def _map_legacy_coco_labels_to_present_coco_labels(self, results):
-        for result in results:
-            legacy_labels_tensor = result['labels']
-            present_labels_tensor = torch.zeros_like(legacy_labels_tensor)
-            for i, value in enumerate(legacy_labels_tensor):
-                present_labels_tensor[i] = self.legacy_label2present_label[value.item()]
-            result['labels'] = present_labels_tensor
-        return results
-
     def forward(self,
                 images: List[Tensor],
                 targets: Optional[List[dict]] = None
@@ -262,8 +249,6 @@ class UPT(nn.Module):
 
         results = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1]}
         results = self.postprocessor(results, image_sizes)
-        if self.legacy_label2present_label is not None:
-            results = self._map_legacy_coco_labels_to_present_coco_labels(results)
         region_props = self.prepare_region_proposals(results, hs[-1])
 
         logits, prior, bh, bo, objects, attn_maps, pw_tokens = self.interaction_head(
@@ -285,17 +270,17 @@ class UPT(nn.Module):
 def build_detector(args, class_corr):
     _, _, postprocessors = build_model(args)
     detr = torch.hub.load('facebookresearch/detr', 'detr_resnet101', pretrained=True)
-    if os.path.exists(args.pretrained):
-        if dist.get_rank() == 0:
-            print(f"Load weights for the object detector from {args.pretrained}")
-        detr.load_state_dict(torch.load(args.pretrained, map_location='cpu')['model_state_dict'])
+    detr = update_detr_class_embed_head(detr)
+    # if os.path.exists(args.pretrained):
+    #     if dist.get_rank() == 0:
+    #         print(f"Load weights for the object detector from {args.pretrained}")
+    #     detr.load_state_dict(torch.load(args.pretrained, map_location='cpu')['model_state_dict'])
     predictor = torch.nn.Linear(args.repr_dim * 2, args.num_classes)
     interaction_head = InteractionHead(
         predictor, args.hidden_dim, args.repr_dim,
         detr.backbone[0].num_channels,
         args.num_classes, args.human_idx, class_corr
     )
-    legacy_label2present_label = get_legacy_idx2present_idx()
     detector = UPT(
         detr, postprocessors['bbox'], interaction_head,
         human_idx=args.human_idx, num_classes=args.num_classes,
@@ -304,9 +289,24 @@ def build_detector(args, class_corr):
         fg_iou_thresh=args.fg_iou_thresh,
         min_instances=args.min_instances,
         max_instances=args.max_instances,
-        legacy_label2present_label=legacy_label2present_label,
+        nms=args.nms,
     )
     return detector
+
+
+def update_detr_class_embed_head(detr):
+    class_embed = torch.nn.Linear(256, 81, bias=True)
+    w, b = detr.class_embed.state_dict().values()
+    keep = [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+        22, 23, 24, 25, 27, 28, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42,
+        43, 44, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61,
+        62, 63, 64, 65, 67, 70, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 84,
+        85, 86, 87, 88, 89, 90, 91
+    ]
+    class_embed.load_state_dict(dict(weight=w[keep], bias=b[keep]))
+    detr.class_embed = class_embed
+    return detr
 
 
 def get_legacy_idx2present_idx():

@@ -210,6 +210,7 @@ if __name__ == "__main__":
     parser.add_argument('--fg-iou-thresh', default=0.5, type=float)
     parser.add_argument('--min-instances', default=3, type=int)
     parser.add_argument('--max-instances', default=101, type=int)
+    parser.add_argument('--nms', default=1.0, type=int)
 
     parser.add_argument('--resume', default='', help='Resume from a model')
     parser.add_argument('--index', default=0, type=int)

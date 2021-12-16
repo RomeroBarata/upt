@@ -61,7 +61,7 @@ def main(rank, args):
         sampler=torch.utils.data.SequentialSampler(testset)
     )
 
-    args.human_idx = 0  # TODO: Need to change this. Is it okay that my DETR uses 91 classes?
+    args.human_idx = 0
     if args.dataset == 'hicodet':
         object_to_target = train_loader.dataset.dataset.object_to_verb
         args.num_classes = 117
@@ -197,6 +197,7 @@ if __name__ == '__main__':
     parser.add_argument('--fg-iou-thresh', default=0.5, type=float)
     parser.add_argument('--min-instances', default=3, type=int)
     parser.add_argument('--max-instances', default=15, type=int)
+    parser.add_argument('--nms', default=0.5, type=float)
 
     args = parser.parse_args()
     print(args)
