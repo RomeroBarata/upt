@@ -6,23 +6,23 @@ Fred Zhang <frederic.zhang@anu.edu.au>
 The Australian National University
 Australian Centre for Robotic Vision
 """
-
-import os
-import torch
-import pocket
-import warnings
 import argparse
-import numpy as np
+import os
+import warnings
+
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.patheffects as peff
-
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+import numpy as np
+import torch
 
+import pocket
 from utils import DataFactory
 from upt import build_detector
 
 warnings.filterwarnings("ignore")
+
 
 def draw_boxes(ax, boxes):
     xy = boxes[:, :2].unbind(0)
@@ -33,6 +33,7 @@ def draw_boxes(ax, boxes):
         txt = plt.text(*a.tolist(), str(i+1), fontsize=20, fontweight='semibold', color='w')
         txt.set_path_effects([peff.withStroke(linewidth=5, foreground='#000000')])
         plt.draw()
+
 
 def visualise_entire_image(image, output, actions, action=None, thresh=0.2):
     """Visualise bounding box pairs in the whole image by classes"""
@@ -123,9 +124,21 @@ def visualise_entire_image(image, output, actions, action=None, thresh=0.2):
     draw_boxes(ax, boxes)
     plt.show()
 
+
 @torch.no_grad()
 def main(args):
-
+    # Steps to get HOI of my own detections:
+    # [DONE] 0. Check the overlap between HICO-DET verbs and the verbs I've been using.
+    # [DONE] 1. Provide my pre-trained DETR. The InteractionHead requires average pooled features from the
+    # backbone network of DETR.
+    # [DONE] 2. When loading pre-trained weights, only load the weights for the InteractionHead, since I'm
+    # providing my own DETR and don't my weights to be overwritten.
+    # [DONE] 3. In UTP forward code, run my DETR backbone network and get global features.
+    # 4. Pass to their model my own detections: bounding boxes, labels, scores, and DETR's transformer decoder hidden
+    # state. [DONE] Cancel their NMS procedure.
+    # 5. Save the output result on per-frame basis.
+    # 6. Setup script to do it for the whole MPII Cooking 2 dataset. Also, think about whether we need to save any
+    # other information output by this model.
     dataset = DataFactory(name=args.dataset, partition=args.partition, data_root=args.data_root)
     conversion = dataset.dataset.object_to_verb if args.dataset == 'hicodet' \
         else list(dataset.dataset.object_to_action.values())
@@ -139,7 +152,8 @@ def main(args):
     if os.path.exists(args.resume):
         print(f"=> Continue from saved checkpoint {args.resume}")
         checkpoint = torch.load(args.resume, map_location='cpu')
-        upt.load_state_dict(checkpoint['model_state_dict'])
+        model_state_dict = {k: v for k, v in checkpoint['model_state_dict'].items() if 'detector' not in k}
+        upt.load_state_dict(model_state_dict, strict=False)
     else:
         print(f"=> Start from a randomly initialised model")
 
@@ -148,8 +162,8 @@ def main(args):
         output = upt([image])
         image = dataset.dataset.load_image(
             os.path.join(dataset.dataset._root,
-                dataset.dataset.filename(args.index)
-        ))
+                         dataset.dataset.filename(args.index)
+                         ))
     else:
         image = dataset.dataset.load_image(args.image_path)
         image_tensor, _ = dataset.transforms(image, None)
@@ -157,8 +171,8 @@ def main(args):
 
     visualise_entire_image(image, output[0], actions, args.action, args.action_score_thresh)
 
+
 if __name__ == "__main__":
-    
     parser = argparse.ArgumentParser()
     parser.add_argument('--backbone', default='resnet50', type=str)
     parser.add_argument('--dilation', action='store_true')
@@ -192,20 +206,20 @@ if __name__ == "__main__":
 
     parser.add_argument('--device', default='cpu')
     parser.add_argument('--pretrained', default='', help='Path to a pretrained detector')
-    parser.add_argument('--box-score-thresh', default=0.2, type=float)
+    parser.add_argument('--box-score-thresh', default=0.0, type=float)
     parser.add_argument('--fg-iou-thresh', default=0.5, type=float)
     parser.add_argument('--min-instances', default=3, type=int)
-    parser.add_argument('--max-instances', default=15, type=int)
+    parser.add_argument('--max-instances', default=101, type=int)
 
     parser.add_argument('--resume', default='', help='Resume from a model')
     parser.add_argument('--index', default=0, type=int)
     parser.add_argument('--action', default=None, type=int,
-        help="Index of the action class to visualise.")
+                        help="Index of the action class to visualise.")
     parser.add_argument('--action-score-thresh', default=0.2, type=float,
-        help="Threshold on action classes.")
+                        help="Threshold on action classes.")
     parser.add_argument('--image-path', default=None, type=str,
-        help="Path to an image file.")
-    
+                        help="Path to an image file.")
+
     args = parser.parse_args()
 
     main(args)

@@ -153,12 +153,13 @@ class ModifiedEncoderLayer(nn.Module):
 
         return x, attn
 
+
 class ModifiedEncoder(nn.Module):
     def __init__(self,
-        hidden_size: int = 256, representation_size: int = 512,
-        num_heads: int = 8, num_layers: int = 2,
-        dropout_prob: float = .1, return_weights: bool = False,
-    ) -> None:
+                 hidden_size: int = 256, representation_size: int = 512,
+                 num_heads: int = 8, num_layers: int = 2,
+                 dropout_prob: float = .1, return_weights: bool = False,
+                 ) -> None:
         super().__init__()
         self.num_layers = num_layers
         self.mod_enc = nn.ModuleList([ModifiedEncoderLayer(
@@ -172,6 +173,7 @@ class ModifiedEncoder(nn.Module):
             x, attn = layer(x, y)
             attn_weights.append(attn)
         return x, attn_weights
+
 
 class InteractionHead(nn.Module):
     """
@@ -195,11 +197,11 @@ class InteractionHead(nn.Module):
         The set of valid action classes for each object type
     """
     def __init__(self,
-        box_pair_predictor: nn.Module,
-        hidden_state_size: int, representation_size: int,
-        num_channels: int, num_classes: int, human_idx: int,
-        object_class_to_target_class: List[list]
-    ) -> None:
+                 box_pair_predictor: nn.Module,
+                 hidden_state_size: int, representation_size: int,
+                 num_channels: int, num_classes: int, human_idx: int,
+                 object_class_to_target_class: List[list]
+                 ) -> None:
         super().__init__()
 
         self.box_pair_predictor = box_pair_predictor
@@ -245,8 +247,8 @@ class InteractionHead(nn.Module):
         )
 
     def compute_prior_scores(self,
-        x: Tensor, y: Tensor, scores: Tensor, object_class: Tensor
-    ) -> Tensor:
+                             x: Tensor, y: Tensor, scores: Tensor, object_class: Tensor
+                             ) -> Tensor:
         prior_h = torch.zeros(len(x), self.num_classes, device=scores.device)
         prior_o = torch.zeros_like(prior_h)
 
@@ -258,7 +260,7 @@ class InteractionHead(nn.Module):
         # Map object class index to target class index
         # Object class index to target class index is a one-to-many mapping
         target_cls_idx = [self.object_class_to_target_class[obj.item()]
-            for obj in object_class[y]]
+                          for obj in object_class[y]]
         # Duplicate box pair indices for each target class
         pair_idx = [i for i, tar in enumerate(target_cls_idx) for _ in tar]
         # Flatten mapped target indices
@@ -306,7 +308,7 @@ class InteractionHead(nn.Module):
             is_human = labels == self.human_idx
             n_h = torch.sum(is_human); n = len(boxes)
             # Permute human instances to the top
-            if not torch.all(labels[:n_h]==self.human_idx):
+            if not torch.all(labels[:n_h] == self.human_idx):
                 h_idx = torch.nonzero(is_human).squeeze(1)
                 o_idx = torch.nonzero(is_human == 0).squeeze(1)
                 perm = torch.cat([h_idx, o_idx])
@@ -372,4 +374,4 @@ class InteractionHead(nn.Module):
         logits = self.box_pair_predictor(pairwise_tokens_collated)
 
         return logits, prior_collated, \
-            boxes_h_collated, boxes_o_collated, object_class_collated, attn_maps_collated
+            boxes_h_collated, boxes_o_collated, object_class_collated, attn_maps_collated, pairwise_tokens_collated

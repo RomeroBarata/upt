@@ -24,6 +24,7 @@ from utils import custom_collate, CustomisedDLE, DataFactory
 
 warnings.filterwarnings("ignore")
 
+
 def main(rank, args):
 
     dist.init_process_group(
@@ -60,7 +61,7 @@ def main(rank, args):
         sampler=torch.utils.data.SequentialSampler(testset)
     )
 
-    args.human_idx = 0
+    args.human_idx = 0  # TODO: Need to change this. Is it okay that my DETR uses 91 classes?
     if args.dataset == 'hicodet':
         object_to_target = train_loader.dataset.dataset.object_to_verb
         args.num_classes = 117
@@ -112,7 +113,7 @@ def main(rank, args):
         p.requires_grad = False
     param_dicts = [{
         "params": [p for n, p in upt.named_parameters()
-        if "interaction_head" in n and p.requires_grad]
+                   if "interaction_head" in n and p.requires_grad]
     }]
     optim = torch.optim.AdamW(
         param_dicts, lr=args.lr_head,
@@ -123,6 +124,7 @@ def main(rank, args):
     engine.update_state_key(optimizer=optim, lr_scheduler=lr_scheduler)
 
     engine(args.epochs)
+
 
 @torch.no_grad()
 def sanity_check(args):
@@ -135,6 +137,7 @@ def sanity_check(args):
 
     image, target = dataset[0]
     outputs = upt([image], [target])
+
 
 if __name__ == '__main__':
     

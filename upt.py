@@ -6,7 +6,6 @@ Fred Zhang <frederic.zhang@anu.edu.au>
 The Australian National University
 Australian Centre for Robotic Vision
 """
-
 import os
 import torch
 import torch.distributed as dist
@@ -24,6 +23,7 @@ sys.path.append('detr')
 from models import build_model
 from util import box_ops
 from util.misc import nested_tensor_from_tensor_list
+
 
 class UPT(nn.Module):
     """
@@ -55,14 +55,15 @@ class UPT(nn.Module):
         Maximum number of instances (human or object) to sample
     """
     def __init__(self,
-        detector: nn.Module,
-        postprocessor: nn.Module,
-        interaction_head: nn.Module,
-        human_idx: int, num_classes: int,
-        alpha: float = 0.5, gamma: float = 2.0,
-        box_score_thresh: float = 0.2, fg_iou_thresh: float = 0.5,
-        min_instances: int = 3, max_instances: int = 15,
-    ) -> None:
+                 detector: nn.Module,
+                 postprocessor: nn.Module,
+                 interaction_head: nn.Module,
+                 human_idx: int, num_classes: int,
+                 alpha: float = 0.5, gamma: float = 2.0,
+                 box_score_thresh: float = 0.2, fg_iou_thresh: float = 0.5,
+                 min_instances: int = 3, max_instances: int = 15,
+                 legacy_label2present_label: dict = None,
+                 ) -> None:
         super().__init__()
         self.detector = detector
         self.postprocessor = postprocessor
@@ -79,6 +80,11 @@ class UPT(nn.Module):
 
         self.min_instances = min_instances
         self.max_instances = max_instances
+
+        if legacy_label2present_label is not None:
+            self.legacy_label2present_label = dict(legacy_label2present_label)
+        else:
+            self.legacy_label2present_label = None
 
     def recover_boxes(self, boxes, size):
         boxes = box_ops.box_cxcywh_to_xyxy(boxes)
@@ -134,7 +140,7 @@ class UPT(nn.Module):
         for res, hs in zip(results, hidden_states):
             sc, lb, bx = res.values()
 
-            keep = batched_nms(bx, sc, lb, 0.5)
+            keep = batched_nms(bx, sc, lb, 1.0)
             sc = sc[keep].view(-1)
             lb = lb[keep].view(-1)
             bx = bx[keep].view(-1, 4)
@@ -197,10 +203,19 @@ class UPT(nn.Module):
 
         return detections
 
+    def _map_legacy_coco_labels_to_present_coco_labels(self, results):
+        for result in results:
+            legacy_labels_tensor = result['labels']
+            present_labels_tensor = torch.zeros_like(legacy_labels_tensor)
+            for i, value in enumerate(legacy_labels_tensor):
+                present_labels_tensor[i] = self.legacy_label2present_label[value.item()]
+            result['labels'] = present_labels_tensor
+        return results
+
     def forward(self,
-        images: List[Tensor],
-        targets: Optional[List[dict]] = None
-    ) -> List[dict]:
+                images: List[Tensor],
+                targets: Optional[List[dict]] = None
+                ) -> List[dict]:
         """
         Parameters:
         -----------
@@ -247,9 +262,11 @@ class UPT(nn.Module):
 
         results = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1]}
         results = self.postprocessor(results, image_sizes)
+        if self.legacy_label2present_label is not None:
+            results = self._map_legacy_coco_labels_to_present_coco_labels(results)
         region_props = self.prepare_region_proposals(results, hs[-1])
 
-        logits, prior, bh, bo, objects, attn_maps = self.interaction_head(
+        logits, prior, bh, bo, objects, attn_maps, pw_tokens = self.interaction_head(
             features[-1].tensors, image_sizes, region_props
         )
         boxes = [r['boxes'] for r in region_props]
@@ -264,8 +281,10 @@ class UPT(nn.Module):
         detections = self.postprocessing(boxes, bh, bo, logits, prior, objects, attn_maps, image_sizes)
         return detections
 
+
 def build_detector(args, class_corr):
-    detr, _, postprocessors = build_model(args)
+    _, _, postprocessors = build_model(args)
+    detr = torch.hub.load('facebookresearch/detr', 'detr_resnet101', pretrained=True)
     if os.path.exists(args.pretrained):
         if dist.get_rank() == 0:
             print(f"Load weights for the object detector from {args.pretrained}")
@@ -276,6 +295,7 @@ def build_detector(args, class_corr):
         detr.backbone[0].num_channels,
         args.num_classes, args.human_idx, class_corr
     )
+    legacy_label2present_label = get_legacy_idx2present_idx()
     detector = UPT(
         detr, postprocessors['bbox'], interaction_head,
         human_idx=args.human_idx, num_classes=args.num_classes,
@@ -284,5 +304,35 @@ def build_detector(args, class_corr):
         fg_iou_thresh=args.fg_iou_thresh,
         min_instances=args.min_instances,
         max_instances=args.max_instances,
+        legacy_label2present_label=legacy_label2present_label,
     )
     return detector
+
+
+def get_legacy_idx2present_idx():
+    legacy_idx2present_idx = {}
+    current_index = 0
+    for legacy_index, lbl in enumerate(LEGACY_COCO_CLASSES):
+        if lbl == 'N/A':
+            continue
+        legacy_idx2present_idx[legacy_index] = current_index
+        current_index += 1
+    return legacy_idx2present_idx
+
+
+LEGACY_COCO_CLASSES = [
+    'N/A', 'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus',
+    'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'N/A',
+    'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse',
+    'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'N/A', 'backpack',
+    'umbrella', 'N/A', 'N/A', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis',
+    'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove',
+    'skateboard', 'surfboard', 'tennis racket', 'bottle', 'N/A', 'wine glass',
+    'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich',
+    'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake',
+    'chair', 'couch', 'potted plant', 'bed', 'N/A', 'dining table', 'N/A',
+    'N/A', 'toilet', 'N/A', 'tv', 'laptop', 'mouse', 'remote', 'keyboard',
+    'cell phone', 'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'N/A',
+    'book', 'clock', 'vase', 'scissors', 'teddy bear', 'hair drier',
+    'toothbrush'
+]

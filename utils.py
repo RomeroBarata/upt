@@ -28,6 +28,7 @@ import sys
 sys.path.append('detr')
 import datasets.transforms as T
 
+
 def custom_collate(batch):
     images = []
     targets = []
@@ -35,6 +36,7 @@ def custom_collate(batch):
         images.append(im)
         targets.append(tar)
     return images, targets
+
 
 class DataFactory(Dataset):
     def __init__(self, name, partition, data_root):
@@ -110,12 +112,14 @@ class DataFactory(Dataset):
 
         return image, target
 
+
 class CacheTemplate(defaultdict):
     """A template for VCOCO cached results """
     def __init__(self, **kwargs):
         super().__init__()
         for k, v in kwargs.items():
             self[k] = v
+
     def __missing__(self, k):
         seg = k.split('_')
         # Assign zero score to missing actions
@@ -124,6 +128,7 @@ class CacheTemplate(defaultdict):
         # Assign zero score and a tiny box to missing <action,role> pairs
         else:
             return [0., 0., .1, .1, 0.]
+
 
 class CustomisedDLE(DistributedLearningEngine):
     def __init__(self, net, dataloader, max_norm=0, num_classes=117, **kwargs):
