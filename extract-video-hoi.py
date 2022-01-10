@@ -102,6 +102,7 @@ def xyxy_to_cxcywh(bbs):
 
 # TODO: Test this script on a video and visualise results. Everything working fine, run on full dataset.
 def main():
+    torch.set_num_threads(5)
     arg_parser = create_arg_parser()
     args = arg_parser.parse_args()
     # Load UPT model
