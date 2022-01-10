@@ -322,6 +322,7 @@ class InteractionHead(nn.Module):
                 )
                 boxes_h_collated.append(torch.zeros(0, device=device, dtype=torch.int64))
                 boxes_o_collated.append(torch.zeros(0, device=device, dtype=torch.int64))
+                perm_collated.append(torch.zeros(0, device=device, dtype=torch.int64))
                 object_class_collated.append(torch.zeros(0, device=device, dtype=torch.int64))
                 prior_collated.append(torch.zeros(2, 0, self.num_classes, device=device))
                 continue
