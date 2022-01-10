@@ -201,7 +201,8 @@ class UPT(nn.Module):
 
     def forward(self,
                 images: List[Tensor],
-                targets: Optional[List[dict]] = None
+                targets: Optional[List[dict]] = None,
+                detector_cache: Optional[dict] = None
                 ) -> List[dict]:
         """
         Parameters:
@@ -210,6 +211,9 @@ class UPT(nn.Module):
             Input images in format (C, H, W)
         targets: List[dict], optional
             Human-object interaction targets
+        detector_cache: Optional[dict]
+            Dictionary containing already extracted detections from detector network. It contains three tensors:
+            'pred_logits', 'pred_bbs', and 'pred_hs'.
 
         Returns:
         --------
@@ -240,18 +244,23 @@ class UPT(nn.Module):
             images = nested_tensor_from_tensor_list(images)
         features, pos = self.detector.backbone(images)
 
-        src, mask = features[-1].decompose()
-        assert mask is not None
-        hs = self.detector.transformer(self.detector.input_proj(src), mask, self.detector.query_embed.weight, pos[-1])[0]
+        if detector_cache is None:
+            src, mask = features[-1].decompose()
+            assert mask is not None
+            hs = self.detector.transformer(self.detector.input_proj(src), mask,
+                                           self.detector.query_embed.weight, pos[-1])[0]
 
-        outputs_class = self.detector.class_embed(hs)
-        outputs_coord = self.detector.bbox_embed(hs).sigmoid()
-
+            outputs_class = self.detector.class_embed(hs)
+            outputs_coord = self.detector.bbox_embed(hs).sigmoid()
+        else:
+            hs = detector_cache['hs']
+            outputs_class = detector_cache['pred_logits']
+            outputs_coord = detector_cache['pred_bbs']
         results = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1]}
         results = self.postprocessor(results, image_sizes)
         region_props = self.prepare_region_proposals(results, hs[-1])
 
-        logits, prior, bh, bo, objects, attn_maps, pw_tokens = self.interaction_head(
+        logits, prior, bh, bo, objects, attn_maps, pw_tokens, perm = self.interaction_head(
             features[-1].tensors, image_sizes, region_props
         )
         boxes = [r['boxes'] for r in region_props]
@@ -263,7 +272,16 @@ class UPT(nn.Module):
             )
             return loss_dict
 
-        detections = self.postprocessing(boxes, bh, bo, logits, prior, objects, attn_maps, image_sizes)
+        if detector_cache is None:
+            detections = self.postprocessing(boxes, bh, bo, logits, prior, objects, attn_maps, image_sizes)
+        else:
+            detections = {
+                'logits': logits,
+                'human_indices': bh[-1] if len(bh) == 1 else bh,
+                'object_indices': bo[-1] if len(bo) == 1 else bo,
+                'pairwise_tokens': pw_tokens,
+                'permutation': perm[-1] if len(perm) == 1 else perm,
+            }
         return detections
 
 

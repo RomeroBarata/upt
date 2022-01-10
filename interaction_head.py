@@ -18,6 +18,7 @@ import pocket
 
 from ops import compute_spatial_encodings
 
+
 class MultiBranchFusion(nn.Module):
     """
     Multi-branch fusion module
@@ -56,12 +57,14 @@ class MultiBranchFusion(nn.Module):
             nn.Linear(sub_repr_size, hidden_state_size)
             for _ in range(cardinality)
         ])
+
     def forward(self, appearance: Tensor, spatial: Tensor) -> Tensor:
         return F.relu(torch.stack([
             fc_3(F.relu(fc_1(appearance) * fc_2(spatial)))
             for fc_1, fc_2, fc_3
             in zip(self.fc_1, self.fc_2, self.fc_3)
         ]).sum(dim=0))
+
 
 class ModifiedEncoderLayer(nn.Module):
     def __init__(self,
@@ -294,6 +297,7 @@ class InteractionHead(nn.Module):
         device = features.device
         global_features = self.avg_pool(features).flatten(start_dim=1)
 
+        perm_collated = []
         boxes_h_collated = []; boxes_o_collated = []
         prior_collated = []; object_class_collated = []
         pairwise_tokens_collated = []
@@ -308,12 +312,14 @@ class InteractionHead(nn.Module):
             is_human = labels == self.human_idx
             n_h = torch.sum(is_human); n = len(boxes)
             # Permute human instances to the top
+            perm = torch.arange(n)
             if not torch.all(labels[:n_h] == self.human_idx):
                 h_idx = torch.nonzero(is_human).squeeze(1)
                 o_idx = torch.nonzero(is_human == 0).squeeze(1)
                 perm = torch.cat([h_idx, o_idx])
                 boxes = boxes[perm]; scores = scores[perm]
                 labels = labels[perm]; unary_tokens = unary_tokens[perm]
+            perm_collated.append(perm)
             # Skip image when there are no valid human-object pairs
             if n_h == 0 or n <= 1:
                 pairwise_tokens_collated.append(torch.zeros(
@@ -332,6 +338,7 @@ class InteractionHead(nn.Module):
                 torch.arange(n, device=device)
             )
             # Valid human-object pairs
+            # x_keep is the indices of humans and y_keep indices of associated objects, relative to permuted items
             x_keep, y_keep = torch.nonzero(torch.logical_and(x != y, x < n_h)).unbind(1)
             if len(x_keep) == 0:
                 # Should never happen, just to be safe
@@ -374,4 +381,5 @@ class InteractionHead(nn.Module):
         logits = self.box_pair_predictor(pairwise_tokens_collated)
 
         return logits, prior_collated, \
-            boxes_h_collated, boxes_o_collated, object_class_collated, attn_maps_collated, pairwise_tokens_collated
+            boxes_h_collated, boxes_o_collated, object_class_collated, attn_maps_collated, pairwise_tokens_collated, \
+            perm_collated

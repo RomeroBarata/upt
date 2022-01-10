@@ -134,11 +134,11 @@ def main(args):
     # [DONE] 2. When loading pre-trained weights, only load the weights for the InteractionHead, since I'm
     # providing my own DETR and don't my weights to be overwritten.
     # [DONE] 3. In UTP forward code, run my DETR backbone network and get global features.
-    # 4. Pass to their model my own detections: bounding boxes, labels, scores, and DETR's transformer decoder hidden
-    # state. [DONE] Cancel their NMS procedure.
-    # 5. Save the output result on per-frame basis.
-    # 6. Setup script to do it for the whole MPII Cooking 2 dataset. Also, think about whether we need to save any
-    # other information output by this model.
+    # 4. [DONE] Pass to their model my own detections: bounding boxes, labels, scores, and DETR's transformer decoder
+    # hidden state. [DONE] Cancel their NMS procedure.
+    # 5. [DONE] Save the output result on a per-frame basis.
+    # 6. [DONE] Setup script to do it for the whole MPII Cooking 2 dataset. Also, think about whether we need to save
+    # any other information output by this model.
     dataset = DataFactory(name=args.dataset, partition=args.partition, data_root=args.data_root)
     conversion = dataset.dataset.object_to_verb if args.dataset == 'hicodet' \
         else list(dataset.dataset.object_to_action.values())
