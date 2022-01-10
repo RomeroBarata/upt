@@ -120,16 +120,16 @@ def main():
     logits_save_dir = os.path.join(args.save_dir, 'classes_logits', video_id)
     os.makedirs(logits_save_dir, exist_ok=True)
     human_indices_save_dir = os.path.join(args.save_dir, 'human_indices', video_id)
-    os.makedirs(human_indices_save_dir)
+    os.makedirs(human_indices_save_dir, exist_ok=True)
     obj_indices_save_dir = os.path.join(args.save_dir, 'object_indices', video_id)
-    os.makedirs(obj_indices_save_dir)
+    os.makedirs(obj_indices_save_dir, exist_ok=True)
     pairwise_tokens_save_dir = os.path.join(args.save_dir, 'pairwise_tokens', video_id)
-    os.makedirs(pairwise_tokens_save_dir)
+    os.makedirs(pairwise_tokens_save_dir, exist_ok=True)
     perm_save_dir = os.path.join(args.save_dir, 'permutation', video_id)
-    os.makedirs(perm_save_dir)
+    os.makedirs(perm_save_dir, exist_ok=True)
     # Loop through video frames and extract HOIs
     filenames = sorted(os.listdir(args.frames_dir))
-    for filename in tqdm(filenames[300:]):
+    for filename in tqdm(filenames):
         frame_id = filename.split(sep='.')[0]
         logits_filename = os.path.join(logits_save_dir, frame_id + '.npy')
         human_indices_filename = os.path.join(human_indices_save_dir, frame_id + '.npy')
@@ -159,7 +159,8 @@ def main():
             'pred_bbs': pred_bbs,
             'hs': pred_hs,
         }
-        output = upt([im_tensor], detector_cache=detector_cache)
+        with torch.no_grad():
+            output = upt([im_tensor], detector_cache=detector_cache, select_top_scoring_human=True)
         np.save(logits_filename, arr=output['logits'].to('cpu').numpy())
         np.save(human_indices_filename, arr=output['human_indices'].to('cpu').numpy())
         np.save(obj_indices_filename, arr=output['object_indices'].to('cpu').numpy())

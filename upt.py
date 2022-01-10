@@ -202,7 +202,8 @@ class UPT(nn.Module):
     def forward(self,
                 images: List[Tensor],
                 targets: Optional[List[dict]] = None,
-                detector_cache: Optional[dict] = None
+                detector_cache: Optional[dict] = None,
+                select_top_scoring_human=False,
                 ) -> List[dict]:
         """
         Parameters:
@@ -214,6 +215,9 @@ class UPT(nn.Module):
         detector_cache: Optional[dict]
             Dictionary containing already extracted detections from detector network. It contains three tensors:
             'pred_logits', 'pred_bbs', and 'pred_hs'.
+        select_top_scoring_human: bool
+            Whether to select interactions with just the top scoring human detected or all humans. Passed to the
+            InteractionHead.
 
         Returns:
         --------
@@ -261,7 +265,7 @@ class UPT(nn.Module):
         region_props = self.prepare_region_proposals(results, hs[-1])
 
         logits, prior, bh, bo, objects, attn_maps, pw_tokens, perm = self.interaction_head(
-            features[-1].tensors, image_sizes, region_props
+            features[-1].tensors, image_sizes, region_props, select_top_scoring_human
         )
         boxes = [r['boxes'] for r in region_props]
 

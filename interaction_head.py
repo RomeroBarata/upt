@@ -274,7 +274,8 @@ class InteractionHead(nn.Module):
 
         return torch.stack([prior_h, prior_o])
 
-    def forward(self, features: OrderedDict, image_shapes: Tensor, region_props: List[dict]):
+    def forward(self, features: OrderedDict, image_shapes: Tensor, region_props: List[dict],
+                select_top_scoring_human=False):
         """
         Parameters:
         -----------
@@ -292,6 +293,8 @@ class InteractionHead(nn.Module):
                 (N,) Object class indices
             `hidden_states`: Tensor
                 (N, 256) Object features
+        select_top_scoring_human: bool
+            Whether to select interactions with just the top scoring human detected or all humans.
         """
 
         device = features.device
@@ -311,15 +314,6 @@ class InteractionHead(nn.Module):
 
             is_human = labels == self.human_idx
             n_h = torch.sum(is_human); n = len(boxes)
-            # Permute human instances to the top
-            perm = torch.arange(n)
-            if not torch.all(labels[:n_h] == self.human_idx):
-                h_idx = torch.nonzero(is_human).squeeze(1)
-                o_idx = torch.nonzero(is_human == 0).squeeze(1)
-                perm = torch.cat([h_idx, o_idx])
-                boxes = boxes[perm]; scores = scores[perm]
-                labels = labels[perm]; unary_tokens = unary_tokens[perm]
-            perm_collated.append(perm)
             # Skip image when there are no valid human-object pairs
             if n_h == 0 or n <= 1:
                 pairwise_tokens_collated.append(torch.zeros(
@@ -331,6 +325,20 @@ class InteractionHead(nn.Module):
                 object_class_collated.append(torch.zeros(0, device=device, dtype=torch.int64))
                 prior_collated.append(torch.zeros(2, 0, self.num_classes, device=device))
                 continue
+            # Permute human instances to the top
+            perm = torch.arange(n)
+            if not torch.all(labels[:n_h] == self.human_idx):
+                h_idx = torch.nonzero(is_human).squeeze(1)
+                o_idx = torch.nonzero(is_human == 0).squeeze(1)
+                perm = torch.cat([h_idx, o_idx])
+            if select_top_scoring_human:
+                top_human_index = torch.argmax(scores[is_human], keepdim=True)
+                perm = torch.cat([top_human_index, perm[n_h:]])
+                n_h = 1
+                n = len(perm)
+            boxes = boxes[perm]; scores = scores[perm]
+            labels = labels[perm]; unary_tokens = unary_tokens[perm]
+            perm_collated.append(perm)
 
             # Get the pairwise indices
             x, y = torch.meshgrid(
