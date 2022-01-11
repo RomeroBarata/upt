@@ -74,7 +74,9 @@ def create_arg_parser():
                              '/home/romero/data/MPIICooking2/object-detection/detr')
     parser.add_argument('--save_dir', type=str, required=True,
                         help='Where to save detected HOIs. E.g. '
-                             '/home/romero/data/MPIICooking2/human-object-interaction.')
+                             '/home/romero/data/MPIICooking2/human-object-interaction')
+    parser.add_argument('--overwrite', action='store_true',
+                        help='If specified, do not skip already saved HOIs.')
 
     return parser
 
@@ -148,7 +150,7 @@ def main():
                                    os.path.isfile(pw_tokens_filename) and
                                    os.path.isfile(perm_filename)
                                    )
-        if frame_already_processed:
+        if not args.overwrite and frame_already_processed:
             continue
         filepath = os.path.join(args.frames_dir, filename)
         im = dataset.dataset.load_image(filepath)
