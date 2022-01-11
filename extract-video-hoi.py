@@ -112,6 +112,9 @@ def main():
         else list(dataset.dataset.object_to_action.values())
     args.num_classes = 117 if args.dataset == 'hicodet' else 24
     upt = build_detector(args, conversion)
+    checkpoint = torch.load(args.resume, map_location=device)
+    model_state_dict = {k: v for k, v in checkpoint['model_state_dict'].items() if 'detector' not in k}
+    upt.load_state_dict(model_state_dict, strict=False)
     upt.to(device)
     upt.eval()
     # Set up base dirs for provided info

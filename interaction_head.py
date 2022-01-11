@@ -327,7 +327,7 @@ class InteractionHead(nn.Module):
                 prior_collated.append(torch.zeros(2, 0, self.num_classes, device=device))
                 continue
             # Permute human instances to the top
-            perm = torch.arange(n)
+            perm = torch.arange(n, device=device)
             if not torch.all(labels[:n_h] == self.human_idx):
                 h_idx = torch.nonzero(is_human).squeeze(1)
                 o_idx = torch.nonzero(is_human == 0).squeeze(1)
