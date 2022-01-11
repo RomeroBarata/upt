@@ -86,7 +86,7 @@ def load_tensor(filepath, device):
 
 
 def rescale_bb_from_original_to_zero_one(bbs, w, h):
-    im_size = torch.reshape(torch.tensor([w, h, w, h], dtype=torch.float), [1, 1, 1, 4])
+    im_size = torch.reshape(torch.tensor([w, h, w, h], dtype=torch.float, device=bbs.device), [1, 1, 1, 4])
     bbs = bbs / im_size
     return bbs
 
@@ -102,15 +102,17 @@ def xyxy_to_cxcywh(bbs):
 
 # TODO: Test this script on a video and visualise results. Everything working fine, run on full dataset.
 def main():
-    torch.set_num_threads(5)
+    torch.set_num_threads(1)  # Increase this value to ~5 if using cpu
     arg_parser = create_arg_parser()
     args = arg_parser.parse_args()
+    device = args.device
     # Load UPT model
     dataset = DataFactory(name=args.dataset, partition=args.partition, data_root=args.data_root)
     conversion = dataset.dataset.object_to_verb if args.dataset == 'hicodet' \
         else list(dataset.dataset.object_to_action.values())
     args.num_classes = 117 if args.dataset == 'hicodet' else 24
     upt = build_detector(args, conversion)
+    upt.to(device)
     upt.eval()
     # Set up base dirs for provided info
     video_id = os.path.basename(args.frames_dir)
@@ -148,7 +150,7 @@ def main():
         filepath = os.path.join(args.frames_dir, filename)
         im = dataset.dataset.load_image(filepath)
         im_tensor, _ = dataset.transforms(im, None)
-        device = im_tensor.device
+        im_tensor = im_tensor.to(device)
         pred_hs = load_tensor(os.path.join(features_dir, frame_id + '.npy'), device=device)
         pred_logits = load_tensor(os.path.join(cls_logits_dir, frame_id + '.npy'), device=device)
         pred_logits = pred_logits[:, :, :, KEEP]
