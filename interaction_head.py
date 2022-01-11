@@ -334,7 +334,7 @@ class InteractionHead(nn.Module):
                 perm = torch.cat([h_idx, o_idx])
             if select_top_scoring_human:
                 top_human_index = torch.argmax(scores[is_human], keepdim=True)
-                perm = torch.cat([top_human_index, perm[n_h:]])
+                perm = torch.cat([perm[top_human_index], perm[n_h:]])
                 n_h = 1
                 n = len(perm)
             boxes = boxes[perm]; scores = scores[perm]

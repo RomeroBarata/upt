@@ -262,7 +262,16 @@ class UPT(nn.Module):
             outputs_coord = detector_cache['pred_bbs']
         results = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1]}
         results = self.postprocessor(results, image_sizes)
-        region_props = self.prepare_region_proposals(results, hs[-1])
+        if detector_cache is None:
+            # This function is sorting the passed boxes, and we don't want that.
+            region_props = self.prepare_region_proposals(results, hs[-1])
+        else:
+            region_props = [{
+                'boxes': results[-1]['boxes'],
+                'scores': results[-1]['scores'],
+                'labels': results[-1]['labels'],
+                'hidden_states': hs[-1][-1]
+            }]
 
         logits, prior, bh, bo, objects, attn_maps, pw_tokens, perm = self.interaction_head(
             features[-1].tensors, image_sizes, region_props, select_top_scoring_human
